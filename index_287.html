@@ -1,0 +1,1523 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#111111">
+<title>楽譜番号検索</title>
+<style>
+:root{color-scheme:light;--ink:#111;--line:#dedede;--muted:#666;--paper:#fff;--soft:#f5f5f5}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
+main{max-width:760px;margin:0 auto;padding:28px 18px 60px}
+header{border-bottom:2px solid var(--ink);padding:0 0 18px;margin-bottom:24px}
+h1{font-size:clamp(24px,5vw,34px);letter-spacing:.02em;margin:0 0 6px;font-weight:750}
+.sub{font-size:13px;color:var(--muted);margin:0}
+.search{display:flex;gap:8px;margin:18px 0 12px}
+input,button{font:inherit;border-radius:8px}
+input{min-width:0;width:100%;padding:13px 14px;border:1px solid #aaa;background:#fff;color:#111}
+button{padding:12px 16px;border:1px solid var(--ink);background:var(--ink);color:white;cursor:pointer;font-weight:650}
+button.secondary{background:white;color:var(--ink)}button:focus-visible,input:focus-visible{outline:3px solid #888;outline-offset:2px}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;color:var(--muted);font-size:13px}
+.results{display:grid;gap:8px}
+.item{border:1px solid var(--line);border-radius:10px;padding:14px 15px;display:flex;align-items:center;gap:14px}
+.num{font-size:22px;font-weight:800;min-width:52px;font-variant-numeric:tabular-nums}
+.name{flex:1;line-height:1.45;overflow-wrap:anywhere}
+.actions{display:flex;gap:6px}.actions button{font-size:12px;padding:7px 9px}
+.empty{padding:26px 16px;text-align:center;border:1px dashed #bbb;border-radius:10px;color:var(--muted)}
+details{margin-top:24px;border-top:1px solid var(--line);padding-top:18px}
+summary{cursor:pointer;font-weight:700}
+.formgrid{display:grid;grid-template-columns:100px 1fr;gap:10px;margin-top:16px}
+.formgrid label{font-size:13px;align-self:center;color:var(--muted)}
+.formgrid input{padding:11px}
+.formactions{display:flex;gap:8px;margin-top:12px}
+.note{margin-top:26px;color:var(--muted);font-size:12px;line-height:1.7}
+@media(max-width:480px){main{padding:22px 14px 44px}.search button{padding:12px}.item{padding:12px}.num{min-width:44px}.actions button{padding:7px}.toolbar{align-items:flex-start}}
+</style>
+</head>
+<body>
+<main>
+<header><h1>楽譜番号検索</h1><p class="sub">曲名・キーワードから楽譜を探す</p></header>
+<div class="search"><input id="query" aria-label="検索キーワード" placeholder="例：ハウル、ディズニー、210" autocomplete="off"><button id="searchBtn">検索</button></div>
+<div class="toolbar"><span id="count">登録曲 0 件</span><button class="secondary" id="clearBtn">検索をクリア</button></div>
+<section id="results" class="results" aria-live="polite"></section>
+<details>
+<summary>楽譜を追加・編集</summary>
+<form id="entryForm">
+<div class="formgrid">
+<label for="number">番号</label><input id="number" type="number" min="1" required placeholder="例：288">
+<label for="title">曲名</label><input id="title" required placeholder="例：新しい曲名">
+<label for="keywords">キーワード</label><input id="keywords" placeholder="任意・読点やカンマで区切る">
+</div>
+<div class="formactions"><button type="submit" id="saveBtn">追加する</button><button type="button" class="secondary" id="cancelBtn" hidden>編集をやめる</button></div>
+</form>
+</details>
+<p class="note">この試作版の変更内容は、現在使用しているブラウザ内に保存されます。部員全員で同じデータを共有する公開版には、共有データベースとホスティングの設定が必要です。</p>
+</main>
+<script>
+const DATA_VERSION = "287-song-list-2026-10-26";
+const initial = [
+  {
+    "number": 1,
+    "title": "SEAGATE OVERTRUE",
+    "keywords": "SEAGATE OVERTRUE"
+  },
+  {
+    "number": 2,
+    "title": "カーペンターズ・フォーエバー",
+    "keywords": "カーペンターズ・フォーエバー"
+  },
+  {
+    "number": 3,
+    "title": "A MOOR SIDE SUITE",
+    "keywords": "A MOOR SIDE SUITE"
+  },
+  {
+    "number": 4,
+    "title": "Super Chance",
+    "keywords": "Super Chance"
+  },
+  {
+    "number": 5,
+    "title": "上を向いて歩こうin swing",
+    "keywords": "上を向いて歩こうin swing"
+  },
+  {
+    "number": 6,
+    "title": "ハウルの動く城",
+    "keywords": "ハウルの動く城"
+  },
+  {
+    "number": 7,
+    "title": "千と千尋の神隠し ハイライト",
+    "keywords": "千と千尋の神隠し ハイライト"
+  },
+  {
+    "number": 8,
+    "title": "アニメメドレーハウルの動く城より",
+    "keywords": "アニメメドレーハウルの動く城より"
+  },
+  {
+    "number": 9,
+    "title": "魔女の宅急便コレクション",
+    "keywords": "魔女の宅急便コレクション"
+  },
+  {
+    "number": 10,
+    "title": "フィンガー５コレクション",
+    "keywords": "フィンガー５コレクション"
+  },
+  {
+    "number": 11,
+    "title": "エルザの行進",
+    "keywords": "エルザの行進"
+  },
+  {
+    "number": 12,
+    "title": "万博のためのハイホゥマーチ",
+    "keywords": "万博のためのハイホゥマーチ"
+  },
+  {
+    "number": 13,
+    "title": "ユーミン・ポートレート",
+    "keywords": "ユーミン・ポートレート"
+  },
+  {
+    "number": 14,
+    "title": "Cerebration for Winds and Percussion",
+    "keywords": "Cerebration for Winds and Percussion"
+  },
+  {
+    "number": 15,
+    "title": "アルプスの少女ハイジーおしえて",
+    "keywords": "アルプスの少女ハイジーおしえて"
+  },
+  {
+    "number": 16,
+    "title": "FINLANDIA",
+    "keywords": "FINLANDIA"
+  },
+  {
+    "number": 17,
+    "title": "VSー知覚と快楽の螺旋ー",
+    "keywords": "VSー知覚と快楽の螺旋ー"
+  },
+  {
+    "number": 18,
+    "title": "聖者の行進",
+    "keywords": "聖者の行進"
+  },
+  {
+    "number": 19,
+    "title": "華円舞",
+    "keywords": "華円舞"
+  },
+  {
+    "number": 20,
+    "title": "沢地萃",
+    "keywords": "沢地萃"
+  },
+  {
+    "number": 21,
+    "title": "青い水平線",
+    "keywords": "青い水平線"
+  },
+  {
+    "number": 22,
+    "title": "アメリカングラフィティ",
+    "keywords": "アメリカングラフィティ"
+  },
+  {
+    "number": 23,
+    "title": "Over the Rainbow",
+    "keywords": "Over the Rainbow"
+  },
+  {
+    "number": 24,
+    "title": "Othello ALFRED REED",
+    "keywords": "Othello ALFRED REED"
+  },
+  {
+    "number": 25,
+    "title": "幸せなら手をたたこう",
+    "keywords": "幸せなら手をたたこう"
+  },
+  {
+    "number": 26,
+    "title": "序曲ミニアネット",
+    "keywords": "序曲ミニアネット"
+  },
+  {
+    "number": 27,
+    "title": "行進曲威風堂々第１番",
+    "keywords": "行進曲威風堂々第１番"
+  },
+  {
+    "number": 28,
+    "title": "めざせポケモンマスター",
+    "keywords": "めざせポケモンマスター"
+  },
+  {
+    "number": 29,
+    "title": "ディズニーメドレー",
+    "keywords": "ディズニーメドレー"
+  },
+  {
+    "number": 30,
+    "title": "サウンドオブミュージック序曲",
+    "keywords": "サウンドオブミュージック序曲"
+  },
+  {
+    "number": 31,
+    "title": "アメリカングラフィティ１７",
+    "keywords": "アメリカングラフィティ１７"
+  },
+  {
+    "number": 32,
+    "title": "Fanfare and Processional",
+    "keywords": "Fanfare and Processional"
+  },
+  {
+    "number": 33,
+    "title": "ハンガリー舞曲第２番",
+    "keywords": "ハンガリー舞曲第２番"
+  },
+  {
+    "number": 34,
+    "title": "桜華幻想",
+    "keywords": "桜華幻想"
+  },
+  {
+    "number": 35,
+    "title": "サウンドオブミュージック(メドレー)",
+    "keywords": "サウンドオブミュージック(メドレー)"
+  },
+  {
+    "number": 36,
+    "title": "チェスター",
+    "keywords": "チェスター"
+  },
+  {
+    "number": 37,
+    "title": "プラトン洞窟からの脱出１，２楽章",
+    "keywords": "プラトン洞窟からの脱出１，２楽章"
+  },
+  {
+    "number": 38,
+    "title": "バレエ音楽「くるみ割り人形」ジゴーニュおばさんとピエロ",
+    "keywords": "バレエ音楽「くるみ割り人形」ジゴーニュおばさんとピエロ"
+  },
+  {
+    "number": 39,
+    "title": "行進曲「オークリーフ」",
+    "keywords": "行進曲「オークリーフ」"
+  },
+  {
+    "number": 40,
+    "title": "アイム・ア・ブラスバンド",
+    "keywords": "アイム・ア・ブラスバンド"
+  },
+  {
+    "number": 41,
+    "title": "守ってあげたい",
+    "keywords": "守ってあげたい"
+  },
+  {
+    "number": 42,
+    "title": "プラトン洞窟からの脱出３楽章",
+    "keywords": "プラトン洞窟からの脱出３楽章"
+  },
+  {
+    "number": 43,
+    "title": "テキーラ",
+    "keywords": "テキーラ"
+  },
+  {
+    "number": 44,
+    "title": "エル・クンバンチェロ",
+    "keywords": "エル・クンバンチェロ"
+  },
+  {
+    "number": 45,
+    "title": "エリントン・メモリーズ",
+    "keywords": "エリントン・メモリーズ"
+  },
+  {
+    "number": 46,
+    "title": "ドラゴンクエスト４より「序曲」",
+    "keywords": "ドラゴンクエスト４より「序曲」"
+  },
+  {
+    "number": 47,
+    "title": "ロッキーのテーマ",
+    "keywords": "ロッキーのテーマ"
+  },
+  {
+    "number": 48,
+    "title": "フラッシング・ウィンズ",
+    "keywords": "フラッシング・ウィンズ"
+  },
+  {
+    "number": 49,
+    "title": "情熱大陸",
+    "keywords": "情熱大陸"
+  },
+  {
+    "number": 50,
+    "title": "サンダーバードは飛ぶ",
+    "keywords": "サンダーバードは飛ぶ"
+  },
+  {
+    "number": 51,
+    "title": "雷神",
+    "keywords": "雷神"
+  },
+  {
+    "number": 52,
+    "title": "The 33th Regular Concert 2 Opening Theme For T.B.B.C",
+    "keywords": "The 33th Regular Concert 2 Opening Theme For T.B.B.C"
+  },
+  {
+    "number": 53,
+    "title": "スーパーマリオブラザーズ",
+    "keywords": "スーパーマリオブラザーズ"
+  },
+  {
+    "number": 54,
+    "title": "アニメアンサンブルメドレーin東葛ブラス",
+    "keywords": "アニメアンサンブルメドレーin東葛ブラス"
+  },
+  {
+    "number": 55,
+    "title": "新しい夜明けに",
+    "keywords": "新しい夜明けに"
+  },
+  {
+    "number": 56,
+    "title": "バックドラフト",
+    "keywords": "バックドラフト"
+  },
+  {
+    "number": 57,
+    "title": "そばかす",
+    "keywords": "そばかす"
+  },
+  {
+    "number": 58,
+    "title": "歌劇 ローエングリン第３幕の前奏と婚ネルの合唱",
+    "keywords": "歌劇 ローエングリン第３幕の前奏と婚ネルの合唱"
+  },
+  {
+    "number": 59,
+    "title": "バレエ音楽「くるみ割り人形」花のワルツ",
+    "keywords": "バレエ音楽「くるみ割り人形」花のワルツ"
+  },
+  {
+    "number": 60,
+    "title": "バレエ音楽「くるみ割り人形」タランテラ",
+    "keywords": "バレエ音楽「くるみ割り人形」タランテラ"
+  },
+  {
+    "number": 61,
+    "title": "梁塵秘抄－熊野古道の幻想ー",
+    "keywords": "梁塵秘抄－熊野古道の幻想ー"
+  },
+  {
+    "number": 62,
+    "title": "バレエ音楽「くるみ割り人形」こんぺい糖の踊り",
+    "keywords": "バレエ音楽「くるみ割り人形」こんぺい糖の踊り"
+  },
+  {
+    "number": 63,
+    "title": "TEQUILA",
+    "keywords": "TEQUILA"
+  },
+  {
+    "number": 64,
+    "title": "若潮国体用楽譜１",
+    "keywords": "若潮国体用楽譜１"
+  },
+  {
+    "number": 65,
+    "title": "若潮国体用楽譜２",
+    "keywords": "若潮国体用楽譜２"
+  },
+  {
+    "number": 66,
+    "title": "アメリカングラフィティ２",
+    "keywords": "アメリカングラフィティ２"
+  },
+  {
+    "number": 67,
+    "title": "ジャングルファンタジー",
+    "keywords": "ジャングルファンタジー"
+  },
+  {
+    "number": 68,
+    "title": "前奏曲LES PRELUDES",
+    "keywords": "前奏曲LES PRELUDES"
+  },
+  {
+    "number": 69,
+    "title": "スパイ大作戦",
+    "keywords": "スパイ大作戦"
+  },
+  {
+    "number": 70,
+    "title": "BAROQUE HOEDOWN",
+    "keywords": "BAROQUE HOEDOWN"
+  },
+  {
+    "number": 71,
+    "title": "Let’s Swing",
+    "keywords": "Let’s Swing"
+  },
+  {
+    "number": 72,
+    "title": "We'ew All Alone",
+    "keywords": "We'ew All Alone"
+  },
+  {
+    "number": 73,
+    "title": "ディスコ・パーティー３",
+    "keywords": "ディスコ・パーティー３"
+  },
+  {
+    "number": 74,
+    "title": "交響曲第２番キリストの受難①",
+    "keywords": "交響曲第２番キリストの受難①"
+  },
+  {
+    "number": 75,
+    "title": "交響曲第２番キリストの受難②",
+    "keywords": "交響曲第２番キリストの受難②"
+  },
+  {
+    "number": 76,
+    "title": "THE SLEEPING BEAUTY ワルツ",
+    "keywords": "THE SLEEPING BEAUTY ワルツ"
+  },
+  {
+    "number": 77,
+    "title": "スピリティッド・アウェイ 千と千尋の神隠しより",
+    "keywords": "スピリティッド・アウェイ 千と千尋の神隠しより"
+  },
+  {
+    "number": 78,
+    "title": "スターウォーズ・コンサート・セレクション",
+    "keywords": "スターウォーズ・コンサート・セレクション"
+  },
+  {
+    "number": 79,
+    "title": "サウス・ポー",
+    "keywords": "サウス・ポー"
+  },
+  {
+    "number": 80,
+    "title": "ダンス・セレクスティアール",
+    "keywords": "ダンス・セレクスティアール"
+  },
+  {
+    "number": 81,
+    "title": "ウルトラマン・メドレー",
+    "keywords": "ウルトラマン・メドレー"
+  },
+  {
+    "number": 82,
+    "title": "ルパン三世のテーマニューサウンズ",
+    "keywords": "ルパン三世のテーマニューサウンズ"
+  },
+  {
+    "number": 83,
+    "title": "バレエ音楽「くるみ割り人形」終幕のワルツ 大詰め",
+    "keywords": "バレエ音楽「くるみ割り人形」終幕のワルツ 大詰め"
+  },
+  {
+    "number": 84,
+    "title": "翼の折れたエンジェル",
+    "keywords": "翼の折れたエンジェル"
+  },
+  {
+    "number": 85,
+    "title": "美女と野獣",
+    "keywords": "美女と野獣"
+  },
+  {
+    "number": 86,
+    "title": "アリランと赤とんぼ",
+    "keywords": "アリランと赤とんぼ"
+  },
+  {
+    "number": 87,
+    "title": "Lost Moon",
+    "keywords": "Lost Moon"
+  },
+  {
+    "number": 88,
+    "title": "ディスコ・パーティー",
+    "keywords": "ディスコ・パーティー"
+  },
+  {
+    "number": 89,
+    "title": "となりのトトローコンサートバンドのためのセレクションー",
+    "keywords": "となりのトトローコンサートバンドのためのセレクションー"
+  },
+  {
+    "number": 90,
+    "title": "レイダース・マーチ",
+    "keywords": "レイダース・マーチ"
+  },
+  {
+    "number": 91,
+    "title": "カウボーイ",
+    "keywords": "カウボーイ"
+  },
+  {
+    "number": 92,
+    "title": "ヤングマン",
+    "keywords": "ヤングマン"
+  },
+  {
+    "number": 93,
+    "title": "ALICE IN WONDERLAND",
+    "keywords": "ALICE IN WONDERLAND"
+  },
+  {
+    "number": 94,
+    "title": "アメリカングラフィティ１２",
+    "keywords": "アメリカングラフィティ１２"
+  },
+  {
+    "number": 95,
+    "title": "DISNEY AT THE MOVIES",
+    "keywords": "DISNEY AT THE MOVIES"
+  },
+  {
+    "number": 96,
+    "title": "A DISNEYLAND CELEBRATION",
+    "keywords": "A DISNEYLAND CELEBRATION"
+  },
+  {
+    "number": 97,
+    "title": "ライオンキングメドレー",
+    "keywords": "ライオンキングメドレー"
+  },
+  {
+    "number": 98,
+    "title": "ジャパニーズグラフィティ６",
+    "keywords": "ジャパニーズグラフィティ６"
+  },
+  {
+    "number": 99,
+    "title": "ユーレイズミーアップ",
+    "keywords": "ユーレイズミーアップ"
+  },
+  {
+    "number": 100,
+    "title": "リトル・マーメイドメドレー",
+    "keywords": "リトル・マーメイドメドレー"
+  },
+  {
+    "number": 101,
+    "title": "行進曲「希望」",
+    "keywords": "行進曲「希望」"
+  },
+  {
+    "number": 102,
+    "title": "ラスト・コンサート",
+    "keywords": "ラスト・コンサート"
+  },
+  {
+    "number": 103,
+    "title": "ディズニープリンセスメドレー",
+    "keywords": "ディズニープリンセスメドレー"
+  },
+  {
+    "number": 104,
+    "title": "アヴェマリア",
+    "keywords": "アヴェマリア"
+  },
+  {
+    "number": 105,
+    "title": "ハリウッド万歳",
+    "keywords": "ハリウッド万歳"
+  },
+  {
+    "number": 106,
+    "title": "バレエ音楽「くるみ割り人形」あし笛の踊り",
+    "keywords": "バレエ音楽「くるみ割り人形」あし笛の踊り"
+  },
+  {
+    "number": 107,
+    "title": "バレエ音楽「くるみ割り人形」バ・ド・ドゥ",
+    "keywords": "バレエ音楽「くるみ割り人形」バ・ド・ドゥ"
+  },
+  {
+    "number": 108,
+    "title": "バレエ音楽「くるみ割り人形」コーヒーの踊り",
+    "keywords": "バレエ音楽「くるみ割り人形」コーヒーの踊り"
+  },
+  {
+    "number": 109,
+    "title": "バレエ音楽「くるみ割り人形」チョコレートの踊り",
+    "keywords": "バレエ音楽「くるみ割り人形」チョコレートの踊り"
+  },
+  {
+    "number": 110,
+    "title": "バレエ音楽「くるみ割り人形」お茶の踊り",
+    "keywords": "バレエ音楽「くるみ割り人形」お茶の踊り"
+  },
+  {
+    "number": 111,
+    "title": "バレエ音楽「くるみ割り人形」トレパック(ロシアの踊り)",
+    "keywords": "バレエ音楽「くるみ割り人形」トレパック(ロシアの踊り)"
+  },
+  {
+    "number": 112,
+    "title": "バレエ音楽「くるみ割り人形」コーダ",
+    "keywords": "バレエ音楽「くるみ割り人形」コーダ"
+  },
+  {
+    "number": 113,
+    "title": "鉄腕アトム",
+    "keywords": "鉄腕アトム"
+  },
+  {
+    "number": 114,
+    "title": "風の谷のナウシカ３章",
+    "keywords": "風の谷のナウシカ３章"
+  },
+  {
+    "number": 115,
+    "title": "ノアの方舟",
+    "keywords": "ノアの方舟"
+  },
+  {
+    "number": 116,
+    "title": "交響詩禿山の一夜",
+    "keywords": "交響詩禿山の一夜"
+  },
+  {
+    "number": 117,
+    "title": "MAMBO",
+    "keywords": "MAMBO"
+  },
+  {
+    "number": 118,
+    "title": "さくらさくらBRASSROCK",
+    "keywords": "さくらさくらBRASSROCK"
+  },
+  {
+    "number": 119,
+    "title": "PIRATES OF THE CARIBBEAN(Soundtrack highlights)",
+    "keywords": "PIRATES OF THE CARIBBEAN(Soundtrack highlights)"
+  },
+  {
+    "number": 120,
+    "title": "ダンシングクイーン",
+    "keywords": "ダンシングクイーン"
+  },
+  {
+    "number": 121,
+    "title": "アメリカングラフィティ３",
+    "keywords": "アメリカングラフィティ３"
+  },
+  {
+    "number": 122,
+    "title": "アメリカングラフィティ４",
+    "keywords": "アメリカングラフィティ４"
+  },
+  {
+    "number": 123,
+    "title": "アルヴァマー序曲",
+    "keywords": "アルヴァマー序曲"
+  },
+  {
+    "number": 124,
+    "title": "ディズニーメドレー２",
+    "keywords": "ディズニーメドレー２"
+  },
+  {
+    "number": 125,
+    "title": "ジャパニーズグラフィティ１２",
+    "keywords": "ジャパニーズグラフィティ１２"
+  },
+  {
+    "number": 126,
+    "title": "もののけ姫セレクション",
+    "keywords": "もののけ姫セレクション"
+  },
+  {
+    "number": 127,
+    "title": "ジャパニーズグラフィティ８ウルトラ大行進",
+    "keywords": "ジャパニーズグラフィティ８ウルトラ大行進"
+  },
+  {
+    "number": 128,
+    "title": "ディズニークラシックスレビュー",
+    "keywords": "ディズニークラシックスレビュー"
+  },
+  {
+    "number": 129,
+    "title": "STAR WARS",
+    "keywords": "STAR WARS"
+  },
+  {
+    "number": 130,
+    "title": "ジャパニーズグラフィティ１８アニメヒーロー大集合！",
+    "keywords": "ジャパニーズグラフィティ１８アニメヒーロー大集合！"
+  },
+  {
+    "number": 131,
+    "title": "ISRAEL SHALOM",
+    "keywords": "ISRAEL SHALOM"
+  },
+  {
+    "number": 132,
+    "title": "CENTENNIAL PRELUDE",
+    "keywords": "CENTENNIAL PRELUDE"
+  },
+  {
+    "number": 133,
+    "title": "RIVER DANCE (リバーダンス)",
+    "keywords": "RIVER DANCE (リバーダンス)"
+  },
+  {
+    "number": 134,
+    "title": "結婚の踊り",
+    "keywords": "結婚の踊り"
+  },
+  {
+    "number": 135,
+    "title": "スタジオジブリ・アニメ・メドレー",
+    "keywords": "スタジオジブリ・アニメ・メドレー"
+  },
+  {
+    "number": 136,
+    "title": "銀河鉄道９９９(M8)",
+    "keywords": "銀河鉄道９９９(M8)"
+  },
+  {
+    "number": 137,
+    "title": "スターウォーズのテーマ",
+    "keywords": "スターウォーズのテーマ"
+  },
+  {
+    "number": 138,
+    "title": "ルージュの伝言",
+    "keywords": "ルージュの伝言"
+  },
+  {
+    "number": 139,
+    "title": "アルメニアンダンスPART1",
+    "keywords": "アルメニアンダンスPART1"
+  },
+  {
+    "number": 140,
+    "title": "スウィングしなけりゃ意味がない",
+    "keywords": "スウィングしなけりゃ意味がない"
+  },
+  {
+    "number": 141,
+    "title": "ドラえもんのうた",
+    "keywords": "ドラえもんのうた"
+  },
+  {
+    "number": 142,
+    "title": "行進曲星条旗よ永遠なれ",
+    "keywords": "行進曲星条旗よ永遠なれ"
+  },
+  {
+    "number": 143,
+    "title": "ミュージカルミスサイゴンより",
+    "keywords": "ミュージカルミスサイゴンより"
+  },
+  {
+    "number": 144,
+    "title": "フライ・ハイ",
+    "keywords": "フライ・ハイ"
+  },
+  {
+    "number": 145,
+    "title": "君の瞳に恋してる",
+    "keywords": "君の瞳に恋してる"
+  },
+  {
+    "number": 146,
+    "title": "大地と水と火と空のうた",
+    "keywords": "大地と水と火と空のうた"
+  },
+  {
+    "number": 147,
+    "title": "ルパン三世のテーマバンドジャーナル",
+    "keywords": "ルパン三世のテーマバンドジャーナル"
+  },
+  {
+    "number": 148,
+    "title": "ディズニーファンティリュージョン",
+    "keywords": "ディズニーファンティリュージョン"
+  },
+  {
+    "number": 149,
+    "title": "TRANSFORMATION",
+    "keywords": "TRANSFORMATION"
+  },
+  {
+    "number": 150,
+    "title": "大脱走のマーチ",
+    "keywords": "大脱走のマーチ"
+  },
+  {
+    "number": 151,
+    "title": "Where Eagles Soar",
+    "keywords": "Where Eagles Soar"
+  },
+  {
+    "number": 152,
+    "title": "FLASING WINDS",
+    "keywords": "FLASING WINDS"
+  },
+  {
+    "number": 153,
+    "title": "バレエ組曲火の鳥",
+    "keywords": "バレエ組曲火の鳥"
+  },
+  {
+    "number": 154,
+    "title": "March-Bou-Shu",
+    "keywords": "March-Bou-Shu"
+  },
+  {
+    "number": 155,
+    "title": "ジュラシックパークsoundtrack highlights",
+    "keywords": "ジュラシックパークsoundtrack highlights"
+  },
+  {
+    "number": 156,
+    "title": "OLYMPIC FANFARE AND THEME",
+    "keywords": "OLYMPIC FANFARE AND THEME"
+  },
+  {
+    "number": 157,
+    "title": "となりのトトロ",
+    "keywords": "となりのトトロ"
+  },
+  {
+    "number": 158,
+    "title": "Tomorrow’s Affair",
+    "keywords": "Tomorrow’s Affair"
+  },
+  {
+    "number": 159,
+    "title": "A Whole New World",
+    "keywords": "A Whole New World"
+  },
+  {
+    "number": 160,
+    "title": "ドラゴンクエスト４序曲",
+    "keywords": "ドラゴンクエスト４序曲"
+  },
+  {
+    "number": 161,
+    "title": "塔の上のラプンツェルメドレー",
+    "keywords": "塔の上のラプンツェルメドレー"
+  },
+  {
+    "number": 162,
+    "title": "Jackson 5 Medley",
+    "keywords": "Jackson 5 Medley"
+  },
+  {
+    "number": 163,
+    "title": "Symphonic suite from Lord Of The Rings",
+    "keywords": "Symphonic suite from Lord Of The Rings"
+  },
+  {
+    "number": 164,
+    "title": "宇宙戦艦ヤマト",
+    "keywords": "宇宙戦艦ヤマト"
+  },
+  {
+    "number": 165,
+    "title": "東葛飾高校校歌",
+    "keywords": "東葛飾高校校歌"
+  },
+  {
+    "number": 166,
+    "title": "ルパン三世のテーマRock VERSION",
+    "keywords": "ルパン三世のテーマRock VERSION"
+  },
+  {
+    "number": 167,
+    "title": "３年後の君たちへ",
+    "keywords": "３年後の君たちへ"
+  },
+  {
+    "number": 168,
+    "title": "ダンス・セレブレーション",
+    "keywords": "ダンス・セレブレーション"
+  },
+  {
+    "number": 169,
+    "title": "魔女の宅急便メドレー(２０人)",
+    "keywords": "魔女の宅急便メドレー(２０人)"
+  },
+  {
+    "number": 170,
+    "title": "第六の幸福をもたらす宿",
+    "keywords": "第六の幸福をもたらす宿"
+  },
+  {
+    "number": 171,
+    "title": "ハイランド讃歌組曲②",
+    "keywords": "ハイランド讃歌組曲②"
+  },
+  {
+    "number": 172,
+    "title": "馬小屋のブルース",
+    "keywords": "馬小屋のブルース"
+  },
+  {
+    "number": 173,
+    "title": "JUBILEE OVERTURE ジュビリー序曲",
+    "keywords": "JUBILEE OVERTURE ジュビリー序曲"
+  },
+  {
+    "number": 174,
+    "title": "英雄の証 モンスターハンターより",
+    "keywords": "英雄の証 モンスターハンターより"
+  },
+  {
+    "number": 175,
+    "title": "風姿花伝",
+    "keywords": "風姿花伝"
+  },
+  {
+    "number": 176,
+    "title": "Scootin’ on Hardrock",
+    "keywords": "Scootin’ on Hardrock"
+  },
+  {
+    "number": 177,
+    "title": "September",
+    "keywords": "September"
+  },
+  {
+    "number": 178,
+    "title": "メイン・ストリート・エレクトリカル・パレードNew sounds in brass",
+    "keywords": "メイン・ストリート・エレクトリカル・パレードNew sounds in brass"
+  },
+  {
+    "number": 179,
+    "title": "アルプスの詩(金管・弦・パーカス)",
+    "keywords": "アルプスの詩(金管・弦・パーカス)"
+  },
+  {
+    "number": 180,
+    "title": "Mr.インクレディブル",
+    "keywords": "Mr.インクレディブル"
+  },
+  {
+    "number": 181,
+    "title": "乱世の神威 幸村",
+    "keywords": "乱世の神威 幸村"
+  },
+  {
+    "number": 182,
+    "title": "仮面幻想",
+    "keywords": "仮面幻想"
+  },
+  {
+    "number": 183,
+    "title": "ハイランド讃歌組曲①",
+    "keywords": "ハイランド讃歌組曲①"
+  },
+  {
+    "number": 184,
+    "title": "ジャパニーズグラフィティ１０",
+    "keywords": "ジャパニーズグラフィティ１０"
+  },
+  {
+    "number": 185,
+    "title": "Primavera",
+    "keywords": "Primavera"
+  },
+  {
+    "number": 186,
+    "title": "アルプスの詩(スコア)",
+    "keywords": "アルプスの詩(スコア)"
+  },
+  {
+    "number": 187,
+    "title": "野球応援曲集",
+    "keywords": "野球応援曲集"
+  },
+  {
+    "number": 188,
+    "title": "アルヴァマー序曲小編成",
+    "keywords": "アルヴァマー序曲小編成"
+  },
+  {
+    "number": 189,
+    "title": "喜歌劇「微笑みの国」セレクション",
+    "keywords": "喜歌劇「微笑みの国」セレクション"
+  },
+  {
+    "number": 190,
+    "title": "オリエント急行",
+    "keywords": "オリエント急行"
+  },
+  {
+    "number": 191,
+    "title": "百年祭 ２０１２年度改訂版",
+    "keywords": "百年祭 ２０１２年度改訂版"
+  },
+  {
+    "number": 192,
+    "title": "暁闇の宴",
+    "keywords": "暁闇の宴"
+  },
+  {
+    "number": 193,
+    "title": "2016年度課題曲１マーチ・スカイブルー・ドリーム ⅱスペインの市場で",
+    "keywords": "2016年度課題曲１マーチ・スカイブルー・ドリーム ⅱスペインの市場で"
+  },
+  {
+    "number": 194,
+    "title": "1995年度課題曲１行進曲フメセス２世 ⅱスプリング・マーチ",
+    "keywords": "1995年度課題曲１行進曲フメセス２世 ⅱスプリング・マーチ"
+  },
+  {
+    "number": 195,
+    "title": "名探偵コナンメインテーマ",
+    "keywords": "名探偵コナンメインテーマ"
+  },
+  {
+    "number": 196,
+    "title": "シング・シング・シングNew Sounds inBrass",
+    "keywords": "シング・シング・シングNew Sounds inBrass"
+  },
+  {
+    "number": 197,
+    "title": "J-Best -日本を勇気づける名曲たちー",
+    "keywords": "J-Best -日本を勇気づける名曲たちー"
+  },
+  {
+    "number": 198,
+    "title": "イン・ザ・ムード",
+    "keywords": "イン・ザ・ムード"
+  },
+  {
+    "number": 199,
+    "title": "丘の上のレイラ",
+    "keywords": "丘の上のレイラ"
+  },
+  {
+    "number": 200,
+    "title": "アナと雪の女王 Highlights from FROZEN",
+    "keywords": "アナと雪の女王 Highlights from FROZEN"
+  },
+  {
+    "number": 201,
+    "title": "2017年度課題曲３インテルメッツォ４春風の通り道",
+    "keywords": "2017年度課題曲３インテルメッツォ４春風の通り道"
+  },
+  {
+    "number": 202,
+    "title": "1993年度3潮煙 4マーチ・エイプリル・メイ",
+    "keywords": "1993年度3潮煙 4マーチ・エイプリル・メイ"
+  },
+  {
+    "number": 203,
+    "title": "夏うたコレクション",
+    "keywords": "夏うたコレクション"
+  },
+  {
+    "number": 204,
+    "title": "BACK TO THE FUTURE",
+    "keywords": "BACK TO THE FUTURE"
+  },
+  {
+    "number": 205,
+    "title": "展覧会の絵",
+    "keywords": "展覧会の絵"
+  },
+  {
+    "number": 206,
+    "title": "The Phantom of the Opera",
+    "keywords": "The Phantom of the Opera"
+  },
+  {
+    "number": 207,
+    "title": "2015年度課題曲3秘儀３‐旋回舞踊のためのヘテロフォニー‐４マーチ プロヴァンスの風",
+    "keywords": "2015年度課題曲3秘儀３‐旋回舞踊のためのヘテロフォニー‐４マーチ プロヴァンスの風"
+  },
+  {
+    "number": 208,
+    "title": "2016年度課題曲３ある英雄の記憶⁻虹の国と氷の国より4マーチ クローバーグラウンド",
+    "keywords": "2016年度課題曲３ある英雄の記憶⁻虹の国と氷の国より4マーチ クローバーグラウンド"
+  },
+  {
+    "number": 209,
+    "title": "2004年度課題曲3祈りの旅４鳥たちの神話",
+    "keywords": "2004年度課題曲3祈りの旅４鳥たちの神話"
+  },
+  {
+    "number": 210,
+    "title": "1997年度課題曲BバーレスクCディスコ・キッド",
+    "keywords": "1997年度課題曲BバーレスクCディスコ・キッド"
+  },
+  {
+    "number": 211,
+    "title": "2004年度課題曲1風之舞２エアーズ",
+    "keywords": "2004年度課題曲1風之舞２エアーズ"
+  },
+  {
+    "number": 212,
+    "title": "2014年度課題曲３「斎太郎節」の主題による幻想4マーチ 青葉の町で",
+    "keywords": "2014年度課題曲３「斎太郎節」の主題による幻想4マーチ 青葉の町で"
+  },
+  {
+    "number": 213,
+    "title": "1995年度課題曲3ジャンダルム4アップル・マーチ",
+    "keywords": "1995年度課題曲3ジャンダルム4アップル・マーチ"
+  },
+  {
+    "number": 214,
+    "title": "2012年度課題曲３吹奏楽のための綺想曲「じゅげむ」４行進曲 希望の空",
+    "keywords": "2012年度課題曲３吹奏楽のための綺想曲「じゅげむ」４行進曲 希望の空"
+  },
+  {
+    "number": 215,
+    "title": "2012年度課題曲１さくらのうた2行進曲 よろこびへ歩き出せ",
+    "keywords": "2012年度課題曲１さくらのうた2行進曲 よろこびへ歩き出せ"
+  },
+  {
+    "number": 216,
+    "title": "高校三年生",
+    "keywords": "高校三年生"
+  },
+  {
+    "number": 217,
+    "title": "勝利の父＋士官候補生",
+    "keywords": "勝利の父＋士官候補生"
+  },
+  {
+    "number": 218,
+    "title": "1991年度課題曲Cロックン・マーチDそよ風のマーチ",
+    "keywords": "1991年度課題曲Cロックン・マーチDそよ風のマーチ"
+  },
+  {
+    "number": 219,
+    "title": "Carmina Burana",
+    "keywords": "Carmina Burana"
+  },
+  {
+    "number": 220,
+    "title": "故郷の空",
+    "keywords": "故郷の空"
+  },
+  {
+    "number": 221,
+    "title": "逢いたくて逢いたくて",
+    "keywords": "逢いたくて逢いたくて"
+  },
+  {
+    "number": 222,
+    "title": "ノルウェー舞曲第2番",
+    "keywords": "ノルウェー舞曲第2番"
+  },
+  {
+    "number": 223,
+    "title": "1985年度課題曲A Overture FIVE RINGS B 波の見える風景",
+    "keywords": "1985年度課題曲A Overture FIVE RINGS B 波の見える風景"
+  },
+  {
+    "number": 224,
+    "title": "2007年度課題曲１ピッコロ・マーチ ２コンサートマーチ 光と風の通り道",
+    "keywords": "2007年度課題曲１ピッコロ・マーチ ２コンサートマーチ 光と風の通り道"
+  },
+  {
+    "number": 225,
+    "title": "2005年度課題曲３ウトリート・パフォーマーズ・マーチ ４サンライズマーチ",
+    "keywords": "2005年度課題曲３ウトリート・パフォーマーズ・マーチ ４サンライズマーチ"
+  },
+  {
+    "number": 226,
+    "title": "1987年度課題曲A風紋 B渚スコープ",
+    "keywords": "1987年度課題曲A風紋 B渚スコープ"
+  },
+  {
+    "number": 227,
+    "title": "2017年度課題曲１スケルツァンド 2マーチシャイニング・ロード",
+    "keywords": "2017年度課題曲１スケルツァンド 2マーチシャイニング・ロード"
+  },
+  {
+    "number": 228,
+    "title": "2009年度課題曲１ 16世紀のシャンソンによる変奏曲 ⅱコミカル⭐パレード",
+    "keywords": "2009年度課題曲１ 16世紀のシャンソンによる変奏曲 ⅱコミカル⭐パレード"
+  },
+  {
+    "number": 229,
+    "title": "2013年度課題曲3復興への序曲「夢の明日に」４エンターテインメント・マーチ",
+    "keywords": "2013年度課題曲3復興への序曲「夢の明日に」４エンターテインメント・マーチ"
+  },
+  {
+    "number": 230,
+    "title": "2008年度課題曲１ブライアンの休日 ２マーチ 晴天の風",
+    "keywords": "2008年度課題曲１ブライアンの休日 ２マーチ 晴天の風"
+  },
+  {
+    "number": 231,
+    "title": "2005年度課題曲１パワス・ロマーナ ２マーチ 春風",
+    "keywords": "2005年度課題曲１パワス・ロマーナ ２マーチ 春風"
+  },
+  {
+    "number": 232,
+    "title": "1999年度課題曲３行進曲エンブレムズ ４行進曲 K点を越えて",
+    "keywords": "1999年度課題曲３行進曲エンブレムズ ４行進曲 K点を越えて"
+  },
+  {
+    "number": 233,
+    "title": "NIPPON MINYO(２)",
+    "keywords": "NIPPON MINYO(２)"
+  },
+  {
+    "number": 234,
+    "title": "華 －吹奏楽のためにー",
+    "keywords": "華 －吹奏楽のためにー"
+  },
+  {
+    "number": 235,
+    "title": "小さな世界New Sounds in BRASS",
+    "keywords": "小さな世界New Sounds in BRASS"
+  },
+  {
+    "number": 236,
+    "title": "伯爵夫人マリツァセレクション 小編成",
+    "keywords": "伯爵夫人マリツァセレクション 小編成"
+  },
+  {
+    "number": 237,
+    "title": "1993年度課題曲１ターンブル・マーチ ２スター・パズル・マーチ",
+    "keywords": "1993年度課題曲１ターンブル・マーチ ２スター・パズル・マーチ"
+  },
+  {
+    "number": 238,
+    "title": "Car",
+    "keywords": "Car"
+  },
+  {
+    "number": 239,
+    "title": "イーグルクレスト",
+    "keywords": "イーグルクレスト"
+  },
+  {
+    "number": 240,
+    "title": "吹奏楽のための第1組曲G.HOLST",
+    "keywords": "吹奏楽のための第1組曲G.HOLST"
+  },
+  {
+    "number": 241,
+    "title": "DESIRE",
+    "keywords": "DESIRE"
+  },
+  {
+    "number": 242,
+    "title": "Polovetsion Dance From Prince Igur",
+    "keywords": "Polovetsion Dance From Prince Igur"
+  },
+  {
+    "number": 243,
+    "title": "君が代行進曲",
+    "keywords": "君が代行進曲"
+  },
+  {
+    "number": 244,
+    "title": "1999年度課題曲１マーチ・グリーンフォレスト ２レイディアント・マーチ",
+    "keywords": "1999年度課題曲１マーチ・グリーンフォレスト ２レイディアント・マーチ"
+  },
+  {
+    "number": 245,
+    "title": "GHOST TRAIN",
+    "keywords": "GHOST TRAIN"
+  },
+  {
+    "number": 246,
+    "title": "Les Miserable",
+    "keywords": "Les Miserable"
+  },
+  {
+    "number": 247,
+    "title": "Pini Di Roma ローマの松 金管",
+    "keywords": "Pini Di Roma ローマの松 金管"
+  },
+  {
+    "number": 248,
+    "title": "THE HOUNDS OF SPRING",
+    "keywords": "THE HOUNDS OF SPRING"
+  },
+  {
+    "number": 249,
+    "title": "交響曲第3番",
+    "keywords": "交響曲第3番"
+  },
+  {
+    "number": 250,
+    "title": "Polovesian Dance",
+    "keywords": "Polovesian Dance"
+  },
+  {
+    "number": 251,
+    "title": "サンバ・ベアー森のくまさん",
+    "keywords": "サンバ・ベアー森のくまさん"
+  },
+  {
+    "number": 252,
+    "title": "ディープ・パープルメドレー",
+    "keywords": "ディープ・パープルメドレー"
+  },
+  {
+    "number": 253,
+    "title": "アルプスの詩 木管",
+    "keywords": "アルプスの詩 木管"
+  },
+  {
+    "number": 254,
+    "title": "ウィーアー！！",
+    "keywords": "ウィーアー！！"
+  },
+  {
+    "number": 255,
+    "title": "「君の名は。」コレクション",
+    "keywords": "「君の名は。」コレクション"
+  },
+  {
+    "number": 256,
+    "title": "スターウォーズ 王座の間とエンド・タイトル",
+    "keywords": "スターウォーズ 王座の間とエンド・タイトル"
+  },
+  {
+    "number": 257,
+    "title": "ラプソディーインブルー",
+    "keywords": "ラプソディーインブルー"
+  },
+  {
+    "number": 258,
+    "title": "宝島",
+    "keywords": "宝島"
+  },
+  {
+    "number": 259,
+    "title": "STEPHENSON’S Rocket",
+    "keywords": "STEPHENSON’S Rocket"
+  },
+  {
+    "number": 260,
+    "title": "未来予想図2",
+    "keywords": "未来予想図2"
+  },
+  {
+    "number": 261,
+    "title": "2015年度課題曲１天空の旅－吹奏楽のための譚詩ー２マーチ 春の道を歩こう",
+    "keywords": "2015年度課題曲１天空の旅－吹奏楽のための譚詩ー２マーチ 春の道を歩こう"
+  },
+  {
+    "number": 262,
+    "title": "Pini Di Roma ローマの松 木管",
+    "keywords": "Pini Di Roma ローマの松 木管"
+  },
+  {
+    "number": 263,
+    "title": "2013年度課題曲1勇者のマズルカ２祝典行進曲ライジング・サン",
+    "keywords": "2013年度課題曲1勇者のマズルカ２祝典行進曲ライジング・サン"
+  },
+  {
+    "number": 264,
+    "title": "東葛飾地区連合音楽界のためのファンファーレ",
+    "keywords": "東葛飾地区連合音楽界のためのファンファーレ"
+  },
+  {
+    "number": 265,
+    "title": "青銅の騎士",
+    "keywords": "青銅の騎士"
+  },
+  {
+    "number": 266,
+    "title": "アナと雪の女王 Symphonic Highlights from FROZEN",
+    "keywords": "アナと雪の女王 Symphonic Highlights from FROZEN"
+  },
+  {
+    "number": 267,
+    "title": "交響曲第5番より第1楽章 Shostakovich",
+    "keywords": "交響曲第5番より第1楽章 Shostakovich"
+  },
+  {
+    "number": 268,
+    "title": "もろびとこぞりて 聖夜 ジングルベル",
+    "keywords": "もろびとこぞりて 聖夜 ジングルベル"
+  },
+  {
+    "number": 269,
+    "title": "バンドジャーナル付録 ラデツキー行進曲 NHK大河ドラマ新選組メインテーマ オペラ魔笛ファンタジー 花のワルツ ボギー大佐",
+    "keywords": "バンドジャーナル付録 ラデツキー行進曲 NHK大河ドラマ新選組メインテーマ オペラ魔笛ファンタジー 花のワルツ ボギー大佐"
+  },
+  {
+    "number": 270,
+    "title": "バンドジャーナル付録 応急の花火の音楽より 世界の約束 ピアノ・コンチェルティーノ バッカナール 風雅 浜辺の歌 夕焼けこやけ ずいずいずっころばし ふるさと",
+    "keywords": "バンドジャーナル付録 応急の花火の音楽より 世界の約束 ピアノ・コンチェルティーノ バッカナール 風雅 浜辺の歌 夕焼けこやけ ずいずいずっころばし ふるさと"
+  },
+  {
+    "number": 271,
+    "title": "バンドジャーナル付録 篤姫 なき王女のためのパヴァーヌ ブラームスのスケルツォ 聖者の行進 雷神 スペース・ファンタジー２００１",
+    "keywords": "バンドジャーナル付録 篤姫 なき王女のためのパヴァーヌ ブラームスのスケルツォ 聖者の行進 雷神 スペース・ファンタジー２００１"
+  },
+  {
+    "number": 272,
+    "title": "バンドジャーナル付録 Amazing Grace ManHattan BEACH ジュピター 歌劇 トゥーランドットより",
+    "keywords": "バンドジャーナル付録 Amazing Grace ManHattan BEACH ジュピター 歌劇 トゥーランドットより"
+  },
+  {
+    "number": 273,
+    "title": "アルセナール",
+    "keywords": "アルセナール"
+  },
+  {
+    "number": 274,
+    "title": "ユーロビートディズニーメドレー",
+    "keywords": "ユーロビートディズニーメドレー"
+  },
+  {
+    "number": 275,
+    "title": "ディズニーヴィランズメドレー",
+    "keywords": "ディズニーヴィランズメドレー"
+  },
+  {
+    "number": 276,
+    "title": "ALADDIN",
+    "keywords": "ALADDIN"
+  },
+  {
+    "number": 277,
+    "title": "オーメンズ・オブ・ラブ",
+    "keywords": "オーメンズ・オブ・ラブ"
+  },
+  {
+    "number": 278,
+    "title": "銀河鉄道９９９",
+    "keywords": "銀河鉄道９９９"
+  },
+  {
+    "number": 279,
+    "title": "斐伊川に流るるクシナダ姫の涙 小編成版",
+    "keywords": "斐伊川に流るるクシナダ姫の涙 小編成版"
+  },
+  {
+    "number": 280,
+    "title": "アフリカン・シンフォニー",
+    "keywords": "アフリカン・シンフォニー"
+  },
+  {
+    "number": 281,
+    "title": "THE SOUND OF MUSIC 吹奏楽",
+    "keywords": "THE SOUND OF MUSIC 吹奏楽"
+  },
+  {
+    "number": 282,
+    "title": "365日の紙飛行機",
+    "keywords": "365日の紙飛行機"
+  },
+  {
+    "number": 283,
+    "title": "平成ドラマテーマコレクション",
+    "keywords": "平成ドラマテーマコレクション"
+  },
+  {
+    "number": 284,
+    "title": "CENTURIA Overture For Band",
+    "keywords": "CENTURIA Overture For Band"
+  },
+  {
+    "number": 285,
+    "title": "2023年度課題曲3レトロ ４マーチ ペガサスの夢",
+    "keywords": "2023年度課題曲3レトロ ４マーチ ペガサスの夢"
+  },
+  {
+    "number": 286,
+    "title": "マードックからの最後の手紙 小編成",
+    "keywords": "マードックからの最後の手紙 小編成"
+  },
+  {
+    "number": 287,
+    "title": "交響組曲ハリーポッター SYMPHONIC SUITE",
+    "keywords": "交響組曲ハリーポッター SYMPHONIC SUITE"
+  }
+];
+const storedVersion=localStorage.getItem("scoreSongsVersion");
+let songs=storedVersion===DATA_VERSION ? (JSON.parse(localStorage.getItem("scoreSongs")||"null")||initial) : initial;
+let editId=null;
+const $=id=>document.getElementById(id);
+function norm(s){return String(s??"").toLowerCase().normalize("NFKC").replace(/[・･\s\-‐‑–—／/]/g,"")}
+function save(){localStorage.setItem("scoreSongs",JSON.stringify(songs));localStorage.setItem("scoreSongsVersion",DATA_VERSION)}
+function render(){
+ const q=norm($("query").value);
+ const rows=songs.filter(s=>!q||norm(s.number).includes(q)||norm(s.title).includes(q)||norm(s.keywords).includes(q))
+ .sort((a,b)=>a.number-b.number);
+ $("count").textContent=`登録曲 ${songs.length} 件　／　検索結果 ${rows.length} 件`;
+ $("results").innerHTML=rows.length?rows.map(s=>`<article class="item"><div class="num">${s.number}</div><div class="name">${escapeHtml(s.title)}</div><div class="actions"><button class="secondary" data-edit="${s.id}" aria-label="編集">編集</button><button class="secondary" data-del="${s.id}" aria-label="削除">削除</button></div></article>`).join(""):`<div class="empty">該当する楽譜がありません</div>`;
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+songs=songs.map((s,i)=>({...s,id:s.id||`${s.number}-${i}`}));save();render();
+$("searchBtn").onclick=render;$("query").addEventListener("input",render);
+$("clearBtn").onclick=()=>{$("query").value="";render()};
+$("results").addEventListener("click",e=>{
+ const ed=e.target.dataset.edit,del=e.target.dataset.del;
+ if(ed){const s=songs.find(x=>x.id===ed);if(!s)return;editId=ed;$("number").value=s.number;$("title").value=s.title;$("keywords").value=s.keywords||"";$("saveBtn").textContent="変更を保存";$("cancelBtn").hidden=false;$("entryForm").parentElement.open=true;$("number").focus()}
+ if(del&&confirm("この曲を削除しますか？")){songs=songs.filter(x=>x.id!==del);save();render()}
+});
+$("entryForm").onsubmit=e=>{e.preventDefault();const number=Number($("number").value),title=$("title").value.trim(),keywords=$("keywords").value.trim();if(!number||!title)return;
+ if(editId){songs=songs.map(s=>s.id===editId?{...s,number,title,keywords}:s)}else{songs.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),number,title,keywords})}
+ save();render();resetForm();$("entryForm").parentElement.open=false};
+function resetForm(){editId=null;$("entryForm").reset();$("saveBtn").textContent="追加する";$("cancelBtn").hidden=true}
+$("cancelBtn").onclick=resetForm;
+</script>
+</body></html>
